@@ -1,0 +1,14 @@
+{
+  "rateUsdtToUah": 46.6,
+  "rateUahToUsdt": 47.7,
+  "minimumUsdt": 10,
+  "updatedAt": "07.11.2026",
+  "managerUrl": "https://t.me/soyermanager",
+  "exchangeUrl": "https://t.me/soyerexchangecom/3",
+  "projectsUrl": "https://t.me/soyer_pr",
+  "heroTitle": "Обмін криптовалют без зайвих складнощів",
+  "heroText": "SOYER EXCHANGE — зручний обмін USDT та гривні, прозорі умови й індивідуальний підхід до кожної угоди.",
+  "aboutText": "👋 Вітаємо! Ми — команда SOYER EXCHANGE, займаємося обміном криптовалют та допомагаємо проводити швидкі й зручні фінансові операції.",
+  "partnershipText": "Ми зацікавлені у розвитку взаємовигідних партнерських відносин та відкриті до нових можливостей співпраці.",
+  "sections": { "about": true, "partnership": true, "projects": true }
+}
