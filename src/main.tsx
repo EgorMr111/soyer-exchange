@@ -30,7 +30,7 @@ function App() {
   const [receiveAmount, setReceiveAmount] = useState('4660.00')
   const [adminMode, setAdminMode] = useState(location.pathname.startsWith('/admin'))
   const [toast, setToast] = useState('')
-  useEffect(() => { fetch('/api/settings').then(r => r.ok ? r.json() : defaults).then(s => setSettings({ ...defaults, ...s, sections: { ...defaults.sections, ...s.sections } })).catch(() => setSettings(defaults)).finally(() => setLoading(false)) }, [])
+  useEffect(() => { fetch('/api/settings').then(r => r.ok ? r.json() : defaults).then(s => { const next = { ...defaults, ...s, sections: { ...defaults.sections, ...s.sections } }; setSettings(next); setReceiveAmount((100 * next.rateUsdtToUah).toFixed(2)) }).catch(() => { setSettings(defaults); setReceiveAmount((100 * defaults.rateUsdtToUah).toFixed(2)) }).finally(() => setLoading(false)) }, [])
   useEffect(() => { const onPop = () => setAdminMode(location.pathname.startsWith('/admin')); window.addEventListener('popstate', onPop); return () => window.removeEventListener('popstate', onPop) }, [])
   const numericAmount = Math.max(0, Number(amount.replace(',', '.')) || 0)
   const result = direction === 'sell' ? numericAmount * settings.rateUsdtToUah : numericAmount / settings.rateUahToUsdt
