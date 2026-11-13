@@ -1,8 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowDownUp, ArrowRight, ArrowUpRight, ShieldCheck, Wallet, Users, Handshake, Globe2, Zap, Menu, X, Send, RefreshCw, LockKeyhole, Settings2, CheckCircle2, CircleHelp, Coins, ChartNoAxesCombined, Copy, ExternalLink } from 'lucide-react'
+import { ArrowDownUp, ArrowRight, ArrowUpRight, Home, Headphones, ShieldCheck, Wallet, Users, Handshake, Globe2, Zap, Menu, X, Send, RefreshCw, LockKeyhole, Settings2, CheckCircle2, CircleHelp, Coins, ChartNoAxesCombined, Copy, ExternalLink } from 'lucide-react'
 import './style.css'
+
+type TelegramUser = { id: number; first_name: string; username?: string; photo_url?: string }
+declare global {
+  interface Window {
+    Telegram?: { WebApp?: {
+      ready: () => void; expand: () => void; setHeaderColor?: (color: string) => void;
+      setBackgroundColor?: (color: string) => void; disableVerticalSwipes?: () => void;
+      initDataUnsafe?: { user?: TelegramUser }; platform?: string; version?: string;
+    } }
+  }
+}
 
 type Settings = {
   rateUsdtToUah: number; rateUahToUsdt: number; minimumUsdt: number; updatedAt: string;
@@ -30,6 +41,21 @@ function App() {
   const [receiveAmount, setReceiveAmount] = useState('4660.00')
   const [adminMode, setAdminMode] = useState(location.pathname.startsWith('/admin'))
   const [toast, setToast] = useState('')
+  const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(null)
+  const [insideTelegram, setInsideTelegram] = useState(false)
+  useEffect(() => {
+    const tg = window.Telegram?.WebApp
+    if (!tg) return
+    tg.ready()
+    tg.expand()
+    tg.setHeaderColor?.('#07110d')
+    tg.setBackgroundColor?.('#07110d')
+    tg.disableVerticalSwipes?.()
+    setTelegramUser(tg.initDataUnsafe?.user || null)
+    setInsideTelegram(true)
+    document.body.classList.add('telegram-mini-app')
+    return () => document.body.classList.remove('telegram-mini-app')
+  }, [])
   useEffect(() => { fetch('/api/settings').then(r => r.ok ? r.json() : defaults).then(s => { const next = { ...defaults, ...s, sections: { ...defaults.sections, ...s.sections } }; setSettings(next); setReceiveAmount((100 * next.rateUsdtToUah).toFixed(2)) }).catch(() => { setSettings(defaults); setReceiveAmount((100 * defaults.rateUsdtToUah).toFixed(2)) }).finally(() => setLoading(false)) }, [])
   useEffect(() => { const onPop = () => setAdminMode(location.pathname.startsWith('/admin')); window.addEventListener('popstate', onPop); return () => window.removeEventListener('popstate', onPop) }, [])
   const numericAmount = Math.max(0, Number(amount.replace(',', '.')) || 0)
@@ -42,6 +68,7 @@ function App() {
   return <>
     <header className="header"><div className="container nav-wrap">
       <a className="brand" href="#home" onClick={() => setMenuOpen(false)}><span className="brand-mark"><span>S</span></span><span>SOYER <b>EXCHANGE</b></span></a>
+      {insideTelegram && <div className="tg-user-chip">{telegramUser?.photo_url ? <img src={telegramUser.photo_url} alt="" /> : <span className="tg-avatar">{(telegramUser?.first_name || 'S').slice(0,1).toUpperCase()}</span>}<span>{telegramUser?.first_name || 'Telegram'}</span></div>}
       <button className="mobile-toggle" aria-label="Відкрити меню" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X /> : <Menu />}</button>
       <nav className={menuOpen ? 'nav-links open' : 'nav-links'}>{[['Головна','#home'],['Обмін','#exchange'],['Курс','#rates'],['Про нас','#about'],['Партнерство','#partnership'],['Контакти','#contacts']].map(([label,href]) => <a key={href} href={href} onClick={() => setMenuOpen(false)}>{label}</a>)}</nav>
       <a className="button button-small" href={settings.managerUrl} target="_blank" rel="noreferrer">Обміняти <ArrowUpRight size={16}/></a>
@@ -96,6 +123,12 @@ function App() {
     <footer className="footer"><div className="container"><div className="footer-main"><div><a className="brand" href="#home"><span className="brand-mark"><span>S</span></span><span>SOYER <b>EXCHANGE</b></span></a><p>Сучасний підхід до обміну криптовалют.</p></div><div className="footer-nav"><b>НАВІГАЦІЯ</b><a href="#home">Головна</a><a href="#exchange">Обмін</a><a href="#rates">Курс</a><a href="#about">Про нас</a><a href="#partnership">Партнерство</a></div><div className="footer-nav"><b>TELEGRAM</b><a href={settings.managerUrl} target="_blank" rel="noreferrer">@soyermanager <ExternalLink size={12}/></a><a href={settings.projectsUrl} target="_blank" rel="noreferrer">@soyer_pr <ExternalLink size={12}/></a><a href={settings.exchangeUrl} target="_blank" rel="noreferrer">@soyerexchangecom <ExternalLink size={12}/></a></div></div><div className="footer-bottom"><span>© 2026 SOYER EXCHANGE. Усі права захищені.</span><span>Інформацію оновлено: {settings.updatedAt}</span><button onClick={goAdmin}><LockKeyhole size={12}/> ADMIN</button></div><p className="disclaimer">Інформація на сайті має ознайомчий характер і не є публічною офертою, фінансовою чи інвестиційною рекомендацією. Калькулятор показує лише попередній розрахунок. Перевіряйте реквізити та умови безпосередньо з менеджером.</p></div></footer>
     <AnimatePresence>{toast && <motion.div className="toast" initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} exit={{opacity:0,y:10}}>{toast}</motion.div>}</AnimatePresence>
     {loading && <div className="loading-line"/>}
+    {insideTelegram && <nav className="tg-bottom-nav" aria-label="Навігація Mini App">
+      <a href="#home"><Home size={18}/><span>Головна</span></a>
+      <a href="#exchange"><ArrowDownUp size={18}/><span>Калькулятор</span></a>
+      <a href="#rates"><Coins size={18}/><span>Курс</span></a>
+      <a href={settings.managerUrl} target="_blank" rel="noreferrer"><Headphones size={18}/><span>Менеджер</span></a>
+    </nav>}
   </>
 }
 function Feature({number,title,text,icon}:{number:string,title:string,text:string,icon:React.ReactNode}) { return <div className="feature"><span className="feature-number">{number}</span><span className="feature-icon">{icon}</span><div><b>{title}</b><p>{text}</p></div></div> }
