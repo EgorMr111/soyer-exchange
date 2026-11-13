@@ -30,3 +30,25 @@ with check (auth.uid() = user_id and email = (select email from auth.users where
 -- Users must not be able to change request status or edit/delete requests.
 revoke update, delete on public.exchange_requests from anon, authenticated;
 grant select, insert on public.exchange_requests to authenticated;
+
+-- Force every newly submitted request into the initial state.
+create or replace function public.prepare_exchange_request()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+begin
+  if auth.uid() is null or new.user_id <> auth.uid() then
+    raise exception 'Invalid user';
+  end if;
+  select email into new.email from auth.users where id = auth.uid();
+  new.status := 'new';
+  return new;
+end;
+$$;
+
+drop trigger if exists prepare_exchange_request_before_insert on public.exchange_requests;
+create trigger prepare_exchange_request_before_insert
+before insert on public.exchange_requests
+for each row execute function public.prepare_exchange_request();
