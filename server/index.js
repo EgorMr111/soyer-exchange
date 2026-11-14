@@ -18,7 +18,7 @@ const app = express()
 const sessions = new Map()
 const PORT = Number(process.env.PORT || 3001)
 const databaseUrl = process.env.DATABASE_URL || ''
-const pool = /^postgres(?:ql)?:\\/\\//i.test(databaseUrl) ? new Pool({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false }, max: 5 }) : null
+const pool = (databaseUrl.startsWith('postgres://') || databaseUrl.startsWith('postgresql://')) ? new Pool({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false }, max: 5 }) : null
 const isProd = process.env.NODE_ENV === 'production'
 if (isProd && (!process.env.ADMIN_PASSWORD || !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32)) {
   throw new Error('Production requires ADMIN_PASSWORD and SESSION_SECRET (at least 32 characters).')
