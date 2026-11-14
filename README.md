@@ -8,7 +8,7 @@
 - Анімований hero-блок, картки напрямків, блоки про команду та партнерство.
 - Калькулятор USDT → UAH та UAH → USDT з мінімальною сумою.
 - Курси, мінімальна сума, дата, тексти, посилання й видимість секцій керуються з `/admin`.
-- Серверне збереження налаштувань у `data/settings.json`.
+- Серверне збереження налаштувань у PostgreSQL (`DATABASE_URL`), із JSON-файлом як fallback для локального запуску.
 - Захищена адмін-сесія: HttpOnly cookie, SameSite=Strict, серверна перевірка пароля через scrypt, обмеження спроб входу.
 - Немає реального приймання платежів, криптогаманців, автоматичних переказів або фальшивих підтверджень транзакцій.
 
@@ -57,14 +57,15 @@ $env:NODE_ENV="production"
 npm start
 ```
 
-Production-сервер віддає зібраний frontend і API з одного порту (за замовчуванням 3001). Для публічного розміщення використовуйте HTTPS через хостинг або reverse proxy. У production обов'язково задайте `ADMIN_PASSWORD` та `SESSION_SECRET` (не менше 32 символів).
+Production-сервер віддає зібраний frontend і API з одного порту (за замовчуванням 3001). Для публічного розміщення використовуйте HTTPS через хостинг або reverse proxy. У production обов'язково задайте `ADMIN_PASSWORD` та `SESSION_SECRET` (не менше 32 символів). Для збереження курсу та текстів після перезапусків Render додайте `DATABASE_URL` з PostgreSQL (наприклад, Supabase або Render PostgreSQL).
 
 ## Де зберігаються дані
 
-- `data/settings.json` — публічні налаштування сайту, редагуються з адмінпанелі.
+- PostgreSQL, таблиця `soyer_app_settings` — основне спільне сховище налаштувань, якщо задано `DATABASE_URL`.
+- `data/settings.json` — локальне сховище та резервна копія; без `DATABASE_URL` використовується як fallback.
 - `.env` — секрети сервера; не додається до Git.
 
-Зробіть резервну копію `data/settings.json` перед перенесенням сайту на інший сервер.
+Зробіть резервну копію бази PostgreSQL перед перенесенням сайту на інший сервер. Якщо використовується локальний fallback, зробіть резервну копію `data/settings.json`.
 
 ## Важливо перед публічним запуском
 
@@ -73,3 +74,6 @@ Production-сервер віддає зібраний frontend і API з одн�
 
 ## Green theme edition
 The interface uses a premium emerald/black palette. To deploy this version, upload the updated project files to the same GitHub repository and redeploy on Render.
+
+## Android SOYER ONE
+The Android app connects to `https://soyer-exchange-api.onrender.com`. The same administrator password is used by the website and Android app. Settings are exposed through `/api/settings`; updates require the authenticated admin session. Android refreshes public settings every 60 seconds.
