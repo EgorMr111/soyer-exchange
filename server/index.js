@@ -14,6 +14,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
 const dataDir = path.join(root, 'data')
 const settingsPath = path.join(dataDir, 'settings.json')
+const requestsPath = path.join(dataDir, 'requests.json')
 const app = express()
 const sessions = new Map()
 const telegramSessions = new Map()
@@ -49,6 +50,19 @@ async function writeSettings(settings) {
   await fs.writeFile(temp, JSON.stringify(settings, null, 2), 'utf8')
   await fs.rename(temp, settingsPath)
 }
+async function readRequests() {
+  if (pool) {
+    const result = await pool.query('SELECT id, telegram_user_id AS "telegramUserId", username, first_name AS "firstName", direction, amount_from AS "amountFrom", amount_to AS "amountTo", status, created_at AS "createdAt" FROM soyer_exchange_requests ORDER BY created_at DESC LIMIT 300')
+    return result.rows
+  }
+  try { return JSON.parse(await fs.readFile(requestsPath, 'utf8')) } catch { return [] }
+}
+async function writeRequests(items) {
+  await fs.mkdir(dataDir, { recursive: true })
+  const temp = requestsPath + '.tmp'
+  await fs.writeFile(temp, JSON.stringify(items, null, 2), 'utf8')
+  await fs.rename(temp, requestsPath)
+}
 async function initializeStorage() {
   if (!pool) {
     console.warn('DATABASE_URL is not configured; settings use local JSON storage.')
@@ -58,6 +72,17 @@ async function initializeStorage() {
     id SMALLINT PRIMARY KEY CHECK (id = 1),
     settings JSONB NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`)
+  await pool.query(`CREATE TABLE IF NOT EXISTS soyer_exchange_requests (
+    id BIGSERIAL PRIMARY KEY,
+    telegram_user_id TEXT NOT NULL,
+    username TEXT NOT NULL DEFAULT '',
+    first_name TEXT NOT NULL DEFAULT '',
+    direction TEXT NOT NULL,
+    amount_from NUMERIC(24,8) NOT NULL,
+    amount_to NUMERIC(24,8) NOT NULL,
+    status TEXT NOT NULL DEFAULT 'new',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`)
   const existing = await pool.query('SELECT id FROM soyer_app_settings WHERE id = 1')
   if (existing.rowCount === 0) {
@@ -72,6 +97,25 @@ function parseCookies(header = '') {
 }
 function cookieOptions() {
   return `Path=/; HttpOnly; SameSite=Strict; Max-Age=28800${isProd ? '; Secure' : ''}`
+}
+function telegramAdminRequired(req, res, next) {
+  const authorization = String(req.headers.authorization || '')
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : ''
+  const session = token && telegramSessions.get(token)
+  if (!session || session.expiresAt < Date.now()) return res.status(401).json({ error: 'Потрібно увійти через Telegram.' })
+  const allowed = String(process.env.ADMIN_IDS || process.env.ADMIN_TELEGRAM_IDS || '').split(',').map(x => x.trim()).filter(Boolean)
+  if (!allowed.includes(String(session.user.id))) return res.status(403).json({ error: 'Цей Telegram-акаунт не має прав адміністратора.' })
+  req.telegramUser = session.user
+  next()
+}
+function adminOrTelegramRequired(req, res, next) {
+  const authorization = String(req.headers.authorization || '')
+  const bearer = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : ''
+  const adminToken = bearer || parseCookies(req.headers.cookie).soyer_admin
+  const expiry = adminToken && sessions.get(adminToken)
+  if (expiry && expiry >= Date.now()) return next()
+  if (adminToken) sessions.delete(adminToken)
+  return telegramAdminRequired(req, res, next)
 }
 function sessionRequired(req, res, next) {
   const authorization = String(req.headers.authorization || '')
@@ -176,6 +220,26 @@ app.post('/api/auth/telegram', (req, res) => {
   res.json({ ok: true, token, user })
 })
 app.get('/api/auth/me', telegramSessionRequired, (req, res) => res.json({ authenticated: true, user: req.telegramUser }))
+app.post('/api/requests', telegramSessionRequired, async (req, res) => {
+  try {
+    const direction = String(req.body?.direction || '')
+    const amountFrom = Number(req.body?.amountFrom)
+    const amountTo = Number(req.body?.amountTo)
+    if (!['USDT_TO_UAH', 'UAH_TO_USDT'].includes(direction) || !Number.isFinite(amountFrom) || !Number.isFinite(amountTo) || amountFrom <= 0 || amountTo <= 0 || amountFrom > 1000000000 || amountTo > 1000000000) {
+      return res.status(400).json({ error: 'Перевірте напрямок та суму обміну.' })
+    }
+    const user = req.telegramUser
+    if (pool) {
+      const result = await pool.query('INSERT INTO soyer_exchange_requests (telegram_user_id, username, first_name, direction, amount_from, amount_to) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, telegram_user_id AS "telegramUserId", username, first_name AS "firstName", direction, amount_from AS "amountFrom", amount_to AS "amountTo", status, created_at AS "createdAt"', [user.id, user.username || '', user.firstName || '', direction, amountFrom, amountTo])
+      return res.status(201).json({ ok: true, request: result.rows[0] })
+    }
+    const items = await readRequests()
+    const item = { id: Date.now(), telegramUserId: user.id, username: user.username || '', firstName: user.firstName || '', direction, amountFrom, amountTo, status: 'new', createdAt: new Date().toISOString() }
+    items.unshift(item)
+    await writeRequests(items.slice(0, 300))
+    res.status(201).json({ ok: true, request: item })
+  } catch (error) { console.error('Request creation failed:', error); res.status(500).json({ error: 'Не вдалося створити заявку.' }) }
+})
 app.post('/api/auth/logout', telegramSessionRequired, (req, res) => {
   const token = String(req.headers.authorization || '').slice(7).trim()
   telegramSessions.delete(token)
@@ -210,8 +274,30 @@ app.post('/api/admin/logout', sameOrigin, sessionRequired, (req, res) => {
   res.setHeader('Set-Cookie', `soyer_admin=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${isProd ? '; Secure' : ''}`)
   res.json({ ok: true })
 })
-app.get('/api/admin/me', sessionRequired, (_req, res) => res.json({ authenticated: true }))
-app.put('/api/admin/settings', sameOrigin, sessionRequired, async (req, res) => {
+app.get('/api/admin/me', adminOrTelegramRequired, (_req, res) => res.json({ authenticated: true }))
+app.get('/api/admin/requests', adminOrTelegramRequired, async (_req, res) => {
+  try { res.set('Cache-Control', 'no-store'); res.json({ requests: await readRequests() }) }
+  catch { res.status(500).json({ error: 'Не вдалося завантажити заявки.' }) }
+})
+app.patch('/api/admin/requests/:id', adminOrTelegramRequired, async (req, res) => {
+  const id = String(req.params.id)
+  const status = String(req.body?.status || '')
+  if (!['new', 'processing', 'completed', 'cancelled'].includes(status)) return res.status(400).json({ error: 'Некоректний статус заявки.' })
+  try {
+    if (pool) {
+      const result = await pool.query('UPDATE soyer_exchange_requests SET status = $1 WHERE id = $2 RETURNING id', [status, id])
+      if (!result.rowCount) return res.status(404).json({ error: 'Заявку не знайдено.' })
+    } else {
+      const items = await readRequests()
+      const item = items.find(x => String(x.id) === id)
+      if (!item) return res.status(404).json({ error: 'Заявку не знайдено.' })
+      item.status = status
+      await writeRequests(items)
+    }
+    res.json({ ok: true, id, status })
+  } catch { res.status(500).json({ error: 'Не вдалося оновити заявку.' }) }
+})
+app.put('/api/admin/settings', sameOrigin, adminOrTelegramRequired, async (req, res) => {
   try {
     const current = await readSettings()
     const input = req.body || {}
