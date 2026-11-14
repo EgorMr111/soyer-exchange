@@ -56,7 +56,22 @@ function App() {
     document.body.classList.add('telegram-mini-app')
     return () => document.body.classList.remove('telegram-mini-app')
   }, [])
-  useEffect(() => { fetch('/api/settings').then(r => r.ok ? r.json() : defaults).then(s => { const next = { ...defaults, ...s, sections: { ...defaults.sections, ...s.sections } }; setSettings(next); setReceiveAmount((100 * next.rateUsdtToUah).toFixed(2)) }).catch(() => { setSettings(defaults); setReceiveAmount((100 * defaults.rateUsdtToUah).toFixed(2)) }).finally(() => setLoading(false)) }, [])
+  useEffect(() => {
+    let active = true
+    const refreshSettings = () => fetch('/api/settings', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('Settings unavailable')))
+      .then(data => {
+        if (!active) return
+        const next = { ...defaults, ...data, sections: { ...defaults.sections, ...data.sections } }
+        setSettings(next)
+        setReceiveAmount(current => current === '4660.00' ? (100 * next.rateUsdtToUah).toFixed(2) : current)
+      })
+      .catch(() => { if (active) setSettings(current => current || defaults) })
+      .finally(() => { if (active) setLoading(false) })
+    refreshSettings()
+    const timer = window.setInterval(refreshSettings, 60_000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [])
   useEffect(() => { const onPop = () => setAdminMode(location.pathname.startsWith('/admin')); window.addEventListener('popstate', onPop); return () => window.removeEventListener('popstate', onPop) }, [])
   const numericAmount = Math.max(0, Number(amount.replace(',', '.')) || 0)
   const result = direction === 'sell' ? numericAmount * settings.rateUsdtToUah : numericAmount / settings.rateUahToUsdt
