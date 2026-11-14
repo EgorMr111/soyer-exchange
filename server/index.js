@@ -2,7 +2,7 @@ import 'dotenv/config'
 import express from 'express'
 import helmet from 'helmet'
 import { createServer } from 'node:http'
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto'
+import { randomBytes, createHash, createHmac, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -16,6 +16,7 @@ const dataDir = path.join(root, 'data')
 const settingsPath = path.join(dataDir, 'settings.json')
 const app = express()
 const sessions = new Map()
+const telegramSessions = new Map()
 const PORT = Number(process.env.PORT || 3001)
 const databaseUrl = process.env.DATABASE_URL || ''
 const pool = (databaseUrl.startsWith('postgres://') || databaseUrl.startsWith('postgresql://')) ? new Pool({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false }, max: 5 }) : null
@@ -96,6 +97,89 @@ function sameOrigin(req, res, next) {
 app.get('/api/settings', async (_req, res) => {
   try { res.set('Cache-Control', 'no-store'); res.json(await readSettings()) }
   catch { res.status(500).json({ error: 'Не вдалося завантажити налаштування.' }) }
+})
+
+
+function telegramLoginHtml() {
+  const username = String(process.env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, '')
+  if (!username) return '<!doctype html><meta charset="utf-8"><title>SOYER ONE</title><p>Telegram login is not configured. Set TELEGRAM_BOT_USERNAME in Render.</p>'
+  return `<!doctype html>
+<html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Вхід — SOYER ONE</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#080a0f;color:#f5f7fb;font:16px Arial,sans-serif}
+main{width:min(92%,420px);padding:30px;border:1px solid #29334a;border-radius:24px;background:#111722;text-align:center}
+h1{margin:0 0 10px;font-size:25px}p{color:#8d98aa;line-height:1.5}.login{margin:28px auto 8px;display:flex;justify-content:center}
+#error{color:#ff9a9a;font-size:13px}
+</style></head><body><main><h1>SOYER ONE</h1><p>Увійдіть через Telegram, щоб продовжити.</p>
+<div class="login"><script async src="https://telegram.org/js/telegram-widget.js?22" data-telegram-login="${username}" data-size="large" data-userpic="true" data-request-access="write" data-onauth="onTelegramAuth(user)"></script></div>
+<p id="error"></p></main>
+<script>
+async function onTelegramAuth(user){
+ const error=document.getElementById('error'); error.textContent='Перевіряємо акаунт…';
+ try{
+  const response=await fetch('/api/auth/telegram',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(user)});
+  const data=await response.json();
+  if(!response.ok) throw new Error(data.error||'Не вдалося увійти');
+  if(window.SoyerTelegramBridge){window.SoyerTelegramBridge.onAuth(JSON.stringify(data));}
+  else {error.textContent='Поверніться до застосунку SOYER ONE.';}
+ }catch(e){error.textContent=e.message||'Помилка авторизації';}
+}
+</script></body></html>`
+}
+
+function verifyTelegramLogin(payload) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN || ''
+  if (!botToken) return false
+  const hash = String(payload?.hash || '')
+  const authDate = Number(payload?.auth_date || 0)
+  if (!/^[a-f0-9]{64}$/i.test(hash) || !Number.isFinite(authDate) || authDate > Math.floor(Date.now()/1000) + 30 || Date.now()/1000 - authDate > 300) return false
+  const dataCheckString = Object.keys(payload).filter(key => key !== 'hash' && payload[key] !== undefined && payload[key] !== null)
+    .sort().map(key => `${key}=${payload[key]}`).join('\\n')
+  const secret = createHash('sha256').update(botToken).digest()
+  const expected = createHmac('sha256', secret).update(dataCheckString).digest()
+  const supplied = Buffer.from(hash, 'hex')
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected)
+}
+
+function telegramSessionRequired(req, res, next) {
+  const authorization = String(req.headers.authorization || '')
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : ''
+  const session = token && telegramSessions.get(token)
+  if (!session || session.expiresAt < Date.now()) {
+    if (token) telegramSessions.delete(token)
+    return res.status(401).json({ error: 'Потрібно увійти через Telegram.' })
+  }
+  req.telegramUser = session.user
+  next()
+}
+
+app.get('/telegram-login', (_req, res) => {
+  res.set('Cache-Control', 'no-store')
+  res.type('html').send(telegramLoginHtml())
+})
+app.post('/api/auth/telegram', (req, res) => {
+  if (!process.env.TELEGRAM_BOT_USERNAME || !process.env.TELEGRAM_BOT_TOKEN) {
+    return res.status(503).json({ error: 'Telegram-авторизація ще не налаштована на сервері.' })
+  }
+  if (!verifyTelegramLogin(req.body)) return res.status(401).json({ error: 'Не вдалося підтвердити Telegram-акаунт. Спробуйте увійти ще раз.' })
+  const user = {
+    id: String(req.body.id || ''),
+    firstName: String(req.body.first_name || ''),
+    lastName: String(req.body.last_name || ''),
+    username: String(req.body.username || ''),
+    photoUrl: String(req.body.photo_url || '')
+  }
+  if (!user.id || !user.firstName) return res.status(400).json({ error: 'Telegram не повернув дані профілю.' })
+  const token = randomBytes(32).toString('hex')
+  telegramSessions.set(token, { user, expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 })
+  res.json({ ok: true, token, user })
+})
+app.get('/api/auth/me', telegramSessionRequired, (req, res) => res.json({ authenticated: true, user: req.telegramUser }))
+app.post('/api/auth/logout', telegramSessionRequired, (req, res) => {
+  const token = String(req.headers.authorization || '').slice(7).trim()
+  telegramSessions.delete(token)
+  res.json({ ok: true })
 })
 
 const loginAttempts = new Map()
