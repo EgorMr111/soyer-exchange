@@ -7,6 +7,7 @@ import { promisify } from 'node:util'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { Pool } from 'pg'
 
 const scrypt = promisify(scryptCallback)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -16,6 +17,7 @@ const settingsPath = path.join(dataDir, 'settings.json')
 const app = express()
 const sessions = new Map()
 const PORT = Number(process.env.PORT || 3001)
+const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 5 }) : null
 const isProd = process.env.NODE_ENV === 'production'
 if (isProd && (!process.env.ADMIN_PASSWORD || !process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32)) {
   throw new Error('Production requires ADMIN_PASSWORD and SESSION_SECRET (at least 32 characters).')
@@ -27,13 +29,39 @@ app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false 
 app.use(express.json({ limit: '32kb' }))
 
 async function readSettings() {
+  if (pool) {
+    const result = await pool.query('SELECT settings FROM soyer_app_settings WHERE id = 1')
+    if (result.rows[0]?.settings) return result.rows[0].settings
+  }
   return JSON.parse(await fs.readFile(settingsPath, 'utf8'))
 }
 async function writeSettings(settings) {
+  if (pool) {
+    await pool.query(
+      'INSERT INTO soyer_app_settings (id, settings, updated_at) VALUES (1, $1::jsonb, NOW()) ON CONFLICT (id) DO UPDATE SET settings = EXCLUDED.settings, updated_at = NOW()',
+      [JSON.stringify(settings)]
+    )
+  }
   await fs.mkdir(dataDir, { recursive: true })
   const temp = settingsPath + '.tmp'
   await fs.writeFile(temp, JSON.stringify(settings, null, 2), 'utf8')
   await fs.rename(temp, settingsPath)
+}
+async function initializeStorage() {
+  if (!pool) {
+    console.warn('DATABASE_URL is not configured; settings use local JSON storage.')
+    return
+  }
+  await pool.query(`CREATE TABLE IF NOT EXISTS soyer_app_settings (
+    id SMALLINT PRIMARY KEY CHECK (id = 1),
+    settings JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`)
+  const existing = await pool.query('SELECT id FROM soyer_app_settings WHERE id = 1')
+  if (existing.rowCount === 0) {
+    const initial = JSON.parse(await fs.readFile(settingsPath, 'utf8'))
+    await pool.query('INSERT INTO soyer_app_settings (id, settings) VALUES (1, $1::jsonb)', [JSON.stringify(initial)])
+  }
 }
 function parseCookies(header = '') {
   return Object.fromEntries(header.split(';').map(v => v.trim()).filter(Boolean).map(v => {
@@ -129,4 +157,9 @@ app.use((err, _req, res, _next) => {
   console.error(err)
   res.status(500).json({ error: 'Внутрішня помилка сервера.' })
 })
-createServer(app).listen(PORT, () => console.log(`SOYER EXCHANGE API: http://localhost:${PORT}`))
+initializeStorage().then(() => {
+  createServer(app).listen(PORT, () => console.log(`SOYER EXCHANGE API: http://localhost:${PORT}`))
+}).catch(error => {
+  console.error('Storage initialization failed:', error)
+  process.exit(1)
+})
