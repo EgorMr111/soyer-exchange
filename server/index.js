@@ -135,7 +135,7 @@ function verifyTelegramLogin(payload) {
   const authDate = Number(payload?.auth_date || 0)
   if (!/^[a-f0-9]{64}$/i.test(hash) || !Number.isFinite(authDate) || authDate > Math.floor(Date.now()/1000) + 30 || Date.now()/1000 - authDate > 300) return false
   const dataCheckString = Object.keys(payload).filter(key => key !== 'hash' && payload[key] !== undefined && payload[key] !== null)
-    .sort().map(key => `${key}=${payload[key]}`).join('\\n')
+    .sort().map(key => `${key}=${payload[key]}`).join('\n')
   const secret = createHash('sha256').update(botToken).digest()
   const expected = createHmac('sha256', secret).update(dataCheckString).digest()
   const supplied = Buffer.from(hash, 'hex')
