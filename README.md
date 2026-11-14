@@ -9,7 +9,10 @@
 - Калькулятор USDT → UAH та UAH → USDT з мінімальною сумою.
 - Курси, мінімальна сума, дата, тексти, посилання й видимість секцій керуються з `/admin`.
 - Серверне збереження налаштувань у PostgreSQL (`DATABASE_URL`), із JSON-файлом як fallback для локального запуску.
-- Захищена адмін-сесія: HttpOnly cookie, SameSite=Strict, серверна перевірка пароля через scrypt, обмеження спроб входу.
+- Захищена адмін-сесія сайту: HttpOnly cookie, SameSite=Strict, серверна перевірка пароля через scrypt, обмеження спроб входу.
+- Для Android адмін-доступ додатково перевіряється на сервері за Telegram ID зі змінної `ADMIN_IDS` (список ID через кому).
+- Заявки клієнтів зберігаються в PostgreSQL у `soyer_exchange_requests`; без бази — у `data/requests.json`.
+- API заявок: `POST /api/requests`, `GET /api/admin/requests`, `PATCH /api/admin/requests/:id`.
 - Немає реального приймання платежів, криптогаманців, автоматичних переказів або фальшивих підтверджень транзакцій.
 
 ## Запуск у Windows (PowerShell)
@@ -28,6 +31,7 @@ notepad .env
 
 ```env
 ADMIN_PASSWORD=ваш-довгий-унікальний-пароль
+ADMIN_IDS=telegram_id_адміністратора
 SESSION_SECRET=вставте_випадковий_секрет_мінімум_32_символи
 PORT=3001
 NODE_ENV=development
@@ -62,6 +66,7 @@ Production-сервер віддає зібраний frontend і API з одн�
 ## Де зберігаються дані
 
 - PostgreSQL, таблиця `soyer_app_settings` — основне спільне сховище налаштувань, якщо задано `DATABASE_URL`.
+- PostgreSQL, таблиця `soyer_exchange_requests` — заявки клієнтів і статуси.
 - `data/settings.json` — локальне сховище та резервна копія; без `DATABASE_URL` використовується як fallback.
 - `.env` — секрети сервера; не додається до Git.
 
@@ -76,4 +81,4 @@ Production-сервер віддає зібраний frontend і API з одн�
 The interface uses a premium emerald/black palette. To deploy this version, upload the updated project files to the same GitHub repository and redeploy on Render.
 
 ## Android SOYER ONE
-The Android app connects to `https://soyer-exchange-api.onrender.com`. The same administrator password is used by the website and Android app. Settings are exposed through `/api/settings`; updates require the authenticated admin session. Android refreshes public settings every 60 seconds.
+The Android app connects to `https://soyer-exchange-api.onrender.com`. The Android app checks the signed-in Telegram ID against `ADMIN_IDS`; do not put administrator IDs or secrets in the APK. It reads `/api/settings`, creates request records with `/api/requests`, and manages requests through `/api/admin/requests`. Public settings refresh every 60 seconds.
