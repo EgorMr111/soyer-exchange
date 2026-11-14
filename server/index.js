@@ -73,7 +73,9 @@ function cookieOptions() {
   return `Path=/; HttpOnly; SameSite=Strict; Max-Age=28800${isProd ? '; Secure' : ''}`
 }
 function sessionRequired(req, res, next) {
-  const token = parseCookies(req.headers.cookie).soyer_admin
+  const authorization = String(req.headers.authorization || '')
+  const bearer = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : ''
+  const token = bearer || parseCookies(req.headers.cookie).soyer_admin
   const expiry = token && sessions.get(token)
   if (!expiry || expiry < Date.now()) {
     if (token) sessions.delete(token)
@@ -115,7 +117,7 @@ app.post('/api/admin/login', sameOrigin, async (req, res) => {
   const token = randomBytes(32).toString('hex')
   sessions.set(token, now + 8 * 60 * 60 * 1000)
   res.setHeader('Set-Cookie', `soyer_admin=${token}; ${cookieOptions()}`)
-  res.json({ ok: true })
+  res.json({ ok: true, token })
 })
 
 app.post('/api/admin/logout', sameOrigin, sessionRequired, (req, res) => {
