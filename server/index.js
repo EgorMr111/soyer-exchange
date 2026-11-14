@@ -112,7 +112,7 @@ main{width:min(92%,420px);padding:30px;border:1px solid #29334a;border-radius:24
 h1{margin:0 0 10px;font-size:25px}p{color:#8d98aa;line-height:1.5}.login{margin:28px auto 8px;display:flex;justify-content:center}
 #error{color:#ff9a9a;font-size:13px}
 </style></head><body><main><h1>SOYER ONE</h1><p>Увійдіть через Telegram, щоб продовжити.</p>
-<div class="login"><script async src="https://telegram.org/js/telegram-widget.js?22" data-telegram-login="${username}" data-size="large" data-userpic="true" data-request-access="write" data-onauth="onTelegramAuth(user)"></script></div>
+<div class="login"><script async src="https://telegram.org/js/telegram-widget.js?22" data-telegram-login="${username}" data-size="large" data-userpic="true" data-onauth="onTelegramAuth(user)"></script></div>
 <p id="error"></p></main>
 <script>
 async function onTelegramAuth(user){
