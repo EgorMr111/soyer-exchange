@@ -21,7 +21,7 @@ type Settings = {
   aboutText: string; partnershipText: string; sections: { about: boolean; partnership: boolean; projects: boolean }
 }
 const defaults: Settings = {
-  rateUsdtToUah: 46.6, rateUahToUsdt: 47.7, minimumUsdt: 10, updatedAt: '07.11.2026',
+  rateUsdtToUah: 46.6, rateUahToUsdt: 47.7, minimumUsdt: 5, updatedAt: '07.11.2026',
   managerUrl: 'https://t.me/soyermanager', exchangeUrl: 'https://t.me/soyerexchangecom/3', projectsUrl: 'https://t.me/soyer_pr',
   heroTitle: 'Обмін криптовалют без зайвих складнощів',
   heroText: 'SOYER EXCHANGE — зручний обмін USDT та гривні, прозорі умови й індивідуальний підхід до кожної угоди.',
