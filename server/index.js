@@ -229,6 +229,14 @@ app.post('/api/requests', telegramSessionRequired, async (req, res) => {
     if (!['USDT_TO_UAH', 'UAH_TO_USDT'].includes(direction) || !Number.isFinite(amountFrom) || !Number.isFinite(amountTo) || amountFrom <= 0 || amountTo <= 0 || amountFrom > 1000000000 || amountTo > 1000000000) {
       return res.status(400).json({ error: 'Перевірте напрямок та суму обміну.' })
     }
+    const settings = await readSettings()
+    const minimumUah = Number(settings.minimumUsdt || 5) * Number(settings.rateUahToUsdt || 1)
+    if (direction === 'USDT_TO_UAH' && amountFrom < Number(settings.minimumUsdt || 5)) {
+      return res.status(400).json({ error: `Мінімальна сума: ${Number(settings.minimumUsdt || 5)} USDT.` })
+    }
+    if (direction === 'UAH_TO_USDT' && amountFrom < minimumUah) {
+      return res.status(400).json({ error: `Мінімальна сума: ${minimumUah.toFixed(2)} UAH.` })
+    }
     const user = req.telegramUser
     if (pool) {
       const result = await pool.query('INSERT INTO soyer_exchange_requests (telegram_user_id, username, first_name, direction, amount_from, amount_to) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, telegram_user_id AS "telegramUserId", username, first_name AS "firstName", direction, amount_from AS "amountFrom", amount_to AS "amountTo", status, created_at AS "createdAt"', [user.id, user.username || '', user.firstName || '', direction, amountFrom, amountTo])
