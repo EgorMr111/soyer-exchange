@@ -89,6 +89,8 @@ async function initializeStorage() {
     const initial = JSON.parse(await fs.readFile(settingsPath, 'utf8'))
     await pool.query('INSERT INTO soyer_app_settings (id, settings) VALUES (1, $1::jsonb)', [JSON.stringify(initial)])
   }
+  // One-time migration: previously configured minimum of 10 USDT becomes 5 USDT.
+  await pool.query(`UPDATE soyer_app_settings SET settings = jsonb_set(settings, '{minimumUsdt}', '5'::jsonb), updated_at = NOW() WHERE id = 1 AND settings->>'minimumUsdt' = '10'`)
 }
 function parseCookies(header = '') {
   return Object.fromEntries(header.split(';').map(v => v.trim()).filter(Boolean).map(v => {
